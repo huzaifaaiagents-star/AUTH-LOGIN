@@ -82,8 +82,19 @@ def protected_profile(request: Request):
 
     token = auth_header.split(" ")[1]
 
-    return {"message": "Access granted", "token_received": token}
-
+    try:
+        response = supabase.auth.get_user(token)
+        user = response.user
+        return {
+            "id": user.id,
+            "email": user.email,
+            "created_at": user.created_at
+        }
+    except Exception as e:
+        return JSONResponse(
+            status_code=401,
+            content={"error": "Invalid or expired token"}
+        )    
 
 if __name__ == "__main__":
     import uvicorn
