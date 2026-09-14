@@ -6,6 +6,10 @@ from fastapi.responses import JSONResponse
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi import Request
+from fastapi import Depends, HTTPException, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from supabase_auth.errors import AuthApiError
+from fastapi import Depends, HTTPException, Security, Response
 
 
 # Load environment variables from .env
@@ -73,28 +77,33 @@ def login(payload: AuthRequest):
 def public_info():
     return {"message": "Welcome stranger! This info is public."}
 
-@app.get("/protected/profile")
-def protected_profile(request: Request):
-    auth_header = request.headers.get("Authorization")
+security = HTTPBearer()
 
-    if not auth_header or not auth_header.startswith("Bearer ") or len(auth_header.split(" ")) < 2:
-        raise HTTPException(status_code=401, detail="Access token required")
-
-    token = auth_header.split(" ")[1]
-
+def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)):
+    token = credentials.credentials
     try:
         response = supabase.auth.get_user(token)
-        user = response.user
-        return {
-            "id": user.id,
-            "email": user.email,
-            "created_at": user.created_at
-        }
-    except Exception as e:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "Invalid or expired token"}
-        )    
+        return response.user
+    except AuthApiError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+@app.get("/protected/profile")
+def get_profile(user = Depends(get_current_user)):
+    return {
+        "id": user.id,
+        "email": user.email,
+        "created_at": user.created_at
+    }   
+
+@app.post("/auth/logout")
+def logout(user = Depends(get_current_user)):
+    return Response(status_code=204)
+
+@app.get("/protected/dashboard")
+def get_dashboard(user = Depends(get_current_user)):
+    return {
+        "message": f"User authenticated: {user.email}"
+    }   
 
 if __name__ == "__main__":
     import uvicorn
